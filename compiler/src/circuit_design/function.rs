@@ -94,25 +94,25 @@ impl WriteC for FunctionCodeInfo {
         let header = format!("void {}", self.header);
         let params = vec![
             declare_circom_calc_wit(),
-            if producer.prime_str != "goldilocks" {
+            if producer.uses_large_field() {
                 declare_lvar_pointer()
             } else {
-                declare_64bit_lvar_array()
+                declare_direct_lvar_array(producer)
             },
             declare_component_father(),
-            if producer.prime_str != "goldilocks" {
+            if producer.uses_large_field() {
                 declare_dest_pointer()
             } else {
-                declare_64bit_dest_reference()
+                declare_direct_dest_reference(producer)
             },
             declare_dest_size(),
         ];
         let mut body = vec![];
-        if producer.prime_str != "goldilocks" {
+        if producer.uses_large_field() {
             body.push(format!("{};", declare_circuit_constants()));
             body.push(format!("{};", declare_expaux(self.max_number_of_ops_in_expression)));
         } else {
-            body.push(format!("{};", declare_64bit_expaux(self.max_number_of_ops_in_expression)));
+            body.push(format!("{};", declare_direct_expaux(producer, self.max_number_of_ops_in_expression)));
         }            
         body.push(format!("{};", declare_my_template_name_function(&self.name)));
         body.push(format!("u64 {} = {};", my_id(), component_father()));

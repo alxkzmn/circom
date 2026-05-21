@@ -500,10 +500,10 @@ impl WriteC for CallBucket {
         prologue.push("{\n".to_string());
         prologue.push("// start of call bucket".to_string());
         // create lvar parameter
-        if producer.prime_str != "goldilocks" {
+        if producer.uses_large_field() {
             prologue.push(format!("{};", declare_lvar_func_call(self.arena_size)));
         } else {
-            prologue.push(format!("{};", declare_64bit_lvar_func_call(self.arena_size)));
+            prologue.push(format!("{};", declare_direct_lvar_func_call(producer, self.arena_size)));
         }    
         // Check that the access does not generate an out of bounds exception.
         if producer.sanity_check_style >= 3{
@@ -528,7 +528,7 @@ impl WriteC for CallBucket {
             let (mut prologue_value, src) = p.produce_c(producer, parallel);
             prologue.append(&mut prologue_value);
             let arena_position =
-                if producer.prime_str != "goldilocks" {
+                if producer.uses_large_field() {
                     format!("&{}[{}]", L_VAR_FUNC_CALL_STORAGE, count)
                 } else {
                     format!("{}[{}]", L_VAR_FUNC_CALL_STORAGE, count)
@@ -542,7 +542,7 @@ impl WriteC for CallBucket {
                 }
             };
             if size > 1 {
-                let copy_arguments = if producer.prime_str != "goldilocks" {
+                let copy_arguments = if producer.uses_large_field() {
                     vec![arena_position, src, size.to_string()]
                 }else {
                     vec![format!("&{}",arena_position), format!("&{}",src), size.to_string()]
@@ -567,7 +567,7 @@ impl WriteC for CallBucket {
             ReturnType::Intermediate { op_aux_no } => {
                 let exp_aux_index = op_aux_no.to_string();
                 let result_ref =
-                    if producer.prime_str != "goldilocks" {
+                    if producer.uses_large_field() {
                         format!("&{}", expaux(exp_aux_index.clone()))
                     } else {
                         format!("{}", expaux(exp_aux_index.clone()))
@@ -675,14 +675,14 @@ impl WriteC for CallBucket {
 		prologue.append(&mut dest_prologue);
                 let result_ref = match &data.dest_address_type {
                     AddressType::Variable => {
-                        if producer.prime_str != "goldilocks" {
+                        if producer.uses_large_field() {
                             format!("&{}", lvar(dest_index.clone()))
                         } else {
                             format!("{}", lvar(dest_index.clone()))
                         }
                     }
                     AddressType::Signal => {
-                        if producer.prime_str != "goldilocks" {
+                        if producer.uses_large_field() {
                             format!("&{}", signal_values(dest_index.clone()))
                         } else {
                             format!("{}", signal_values(dest_index.clone()))
@@ -693,7 +693,7 @@ impl WriteC for CallBucket {
                             "{}->componentMemory[{}[{}]].signalStart",
                             CIRCOM_CALC_WIT, MY_SUBCOMPONENTS, cmp_index_ref
                         );
-                        if producer.prime_str != "goldilocks" {
+                        if producer.uses_large_field() {
                             format!(
                                 "&{}->signalValues[{} + {}]",
                                 CIRCOM_CALC_WIT, sub_cmp_start, dest_index.clone()

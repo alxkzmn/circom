@@ -129,6 +129,24 @@ impl Default for CProducer {
 }
 
 impl CProducer {
+    pub fn is_goldilocks(&self) -> bool {
+        self.prime_str == "goldilocks"
+    }
+    pub fn is_koalabear(&self) -> bool {
+        self.prime_str == "koalabear"
+    }
+    pub fn uses_direct_field(&self) -> bool {
+        self.is_goldilocks() || self.is_koalabear()
+    }
+    pub fn uses_large_field(&self) -> bool {
+        !self.uses_direct_field()
+    }
+    pub fn direct_field_type(&self) -> &'static str {
+        if self.is_koalabear() { "FrElement" } else { "u64" }
+    }
+    pub fn direct_field_literal_suffix(&self) -> &'static str {
+        if self.is_koalabear() { "u" } else { "ull" }
+    }
     pub fn get_version(&self) -> usize {
         self.major_version
     }

@@ -284,15 +284,15 @@ impl TemplateCodeInfo {
         run_params.push(declare_ctx_index());
         run_params.push(declare_circom_calc_wit());
         let mut run_body = vec![];
-        if producer.prime_str != "goldilocks" {
+        if producer.uses_large_field() {
             run_body.push(format!("{};", declare_circuit_constants()));
         run_body.push(format!("{};", declare_signal_values()));
             run_body.push(format!("{};", declare_expaux(self.expression_stack_depth)));
             run_body.push(format!("{};", declare_lvar(self.var_stack_depth)));
         } else{
-            run_body.push(format!("{};", declare_64bit_signal_values()));
-            run_body.push(format!("{};", declare_64bit_expaux(self.expression_stack_depth)));
-            run_body.push(format!("{};", declare_64bit_lvar(self.var_stack_depth)));
+            run_body.push(format!("{};", declare_direct_signal_values(producer)));
+            run_body.push(format!("{};", declare_direct_expaux(producer, self.expression_stack_depth)));
+            run_body.push(format!("{};", declare_direct_lvar(producer, self.var_stack_depth)));
         }
         run_body.push(format!("{};", declare_my_signal_start()));
         run_body.push(format!("{};", declare_my_template_name()));

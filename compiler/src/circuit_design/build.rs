@@ -211,6 +211,7 @@ fn initialize_wasm_producer(vcp: &VCP, database: &TemplateDB, wat_flag:bool, san
     producer.prime_str = vcp.prime.clone();
     producer.fr_memory_size = match vcp.prime.as_str(){
         "goldilocks" => 412,
+        "koalabear" => 256,
         "bn128" => 1948,
         "bls12381" => 1948,
         "grumpkin" => 1948,

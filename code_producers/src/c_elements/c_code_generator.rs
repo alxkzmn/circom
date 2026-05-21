@@ -42,6 +42,9 @@ pub fn declare_expaux(size: usize) -> CInstruction {
 pub fn declare_64bit_expaux(size: usize) -> CInstruction {
     format!("{} {}[{}]", T_U64, L_INTERMEDIATE_COMPUTATIONS_STACK, size)
 }
+pub fn declare_direct_expaux(producer: &CProducer, size: usize) -> CInstruction {
+    format!("{} {}[{}]", producer.direct_field_type(), L_INTERMEDIATE_COMPUTATIONS_STACK, size)
+}
 pub fn expaux(at: CInstruction) -> CInstruction {
     format!("{}[{}]", L_INTERMEDIATE_COMPUTATIONS_STACK, at)
 }
@@ -56,6 +59,9 @@ pub fn declare_lvar_func_call(size: usize) -> CInstruction {
 pub fn declare_64bit_lvar_func_call(size: usize) -> CInstruction {
     format!("{} {}[{}]", T_U64, L_VAR_FUNC_CALL_STORAGE, size)
 }
+pub fn declare_direct_lvar_func_call(producer: &CProducer, size: usize) -> CInstruction {
+    format!("{} {}[{}]", producer.direct_field_type(), L_VAR_FUNC_CALL_STORAGE, size)
+}
 
 pub const L_VAR_STORAGE: &str = "lvar"; // type PFrElements[]
 pub fn declare_lvar(size: usize) -> CInstruction {
@@ -63,6 +69,9 @@ pub fn declare_lvar(size: usize) -> CInstruction {
 }
 pub fn declare_64bit_lvar(size: usize) -> CInstruction {
     format!("{} {}[{}]", T_U64, L_VAR_STORAGE, size)
+}
+pub fn declare_direct_lvar(producer: &CProducer, size: usize) -> CInstruction {
+    format!("{} {}[{}]", producer.direct_field_type(), L_VAR_STORAGE, size)
 }
 pub fn declare_lvar_pointer() -> CInstruction {
     format!("{}* {}", T_FR_ELEMENT, L_VAR_STORAGE)
@@ -72,6 +81,9 @@ pub fn declare_64bit_lvar_pointer() -> CInstruction {
 }
 pub fn declare_64bit_lvar_array() -> CInstruction {
     format!("{} {}[]", T_U64, L_VAR_STORAGE)
+}
+pub fn declare_direct_lvar_array(producer: &CProducer) -> CInstruction {
+    format!("{} {}[]", producer.direct_field_type(), L_VAR_STORAGE)
 }
 pub fn lvar(at: CInstruction) -> CInstruction {
     format!("{}[{}]", L_VAR_STORAGE, at)
@@ -99,6 +111,9 @@ pub fn declare_dest_pointer() -> CInstruction {
 }
 pub fn declare_64bit_dest_reference() -> CInstruction {
     format!("{}& {}", T_U64, FUNCTION_DESTINATION)
+}
+pub fn declare_direct_dest_reference(producer: &CProducer) -> CInstruction {
+    format!("{}& {}", producer.direct_field_type(), FUNCTION_DESTINATION)
 }
 pub const FUNCTION_DESTINATION_SIZE: &str = "destination_size"; // type PFrElements[]
 pub fn declare_dest_size() -> CInstruction {
@@ -248,6 +263,9 @@ pub fn declare_signal_values() -> CInstruction {
 }
 pub fn declare_64bit_signal_values() -> CInstruction {
     format!("u64* {} = {}->{}", SIGNAL_VALUES, CIRCOM_CALC_WIT, SIGNAL_VALUES)
+}
+pub fn declare_direct_signal_values(producer: &CProducer) -> CInstruction {
+    format!("{}* {} = {}->{}", producer.direct_field_type(), SIGNAL_VALUES, CIRCOM_CALC_WIT, SIGNAL_VALUES)
 }
 pub fn signal_values(at: CInstruction) -> CInstruction {
     format!("{}[{} + {}]", SIGNAL_VALUES, MY_SIGNAL_START, at)
@@ -522,7 +540,7 @@ pub fn collect_template_headers(producer: &CProducer, instances: &TemplateListIn
         }
         if instance.is_extern_c{            
             let mut params_io = Vec::new();
-            if producer.prime_str != "goldilocks" {
+            if producer.uses_large_field() {
                 for (name, is_array) in instance.arguments.as_ref().unwrap(){
                     if *is_array{
                         params_io.push(format!("FrElement* {}[] ", name));
@@ -535,15 +553,16 @@ pub fn collect_template_headers(producer: &CProducer, instances: &TemplateListIn
                     params_io.push(format!("uint* size_{} ", name));
                 }
             } else {
+                let field_type = producer.direct_field_type();
                  for (name, is_array) in instance.arguments.as_ref().unwrap(){
                     if *is_array{
-                        params_io.push(format!("uint64_t {}[] ", name));
+                        params_io.push(format!("{} {}[] ", field_type, name));
                     } else{
-                        params_io.push(format!("uint64_t {} ", name));
+                        params_io.push(format!("{} {} ", field_type, name));
                     }
                 }
                for name in instance.io_signals.as_ref().unwrap(){
-                    params_io.push(format!("uint64_t* {} ", name));
+                    params_io.push(format!("{}* {} ", field_type, name));
                     params_io.push(format!("uint* size_{} ", name));
                 }
             }                
@@ -565,11 +584,11 @@ pub fn collect_function_headers(producer: &CProducer, functions: Vec<String>) ->
     for function in functions {
         let params = vec![
             declare_circom_calc_wit(),
-            if producer.prime_str != "goldilocks" { declare_lvar_pointer()
-            } else { declare_64bit_lvar_array() },
+            if producer.uses_large_field() { declare_lvar_pointer()
+            } else { declare_direct_lvar_array(producer) },
             declare_component_father(),
-            if producer.prime_str != "goldilocks" { declare_dest_pointer()
-            } else { declare_64bit_dest_reference() },
+            if producer.uses_large_field() { declare_dest_pointer()
+            } else { declare_direct_dest_reference(producer) },
             declare_dest_size(),
         ];
         let params = argument_list(params);
@@ -843,7 +862,7 @@ pub fn generate_dat_file(dat_file: &mut dyn Write, producer: &CProducer) -> std:
                                                                                         //dfile.write_all(&sl.to_be_bytes())?;
     dat_file.write_all(&s)?;
     //dat_file.flush()?;
-    if producer.prime_str != "goldilocks" { // if field number is not goldilocks
+    if producer.uses_large_field() {
         let s = generate_dat_constant_list(producer, producer.get_field_constant_list()); // list of bytes Fr
         dat_file.write_all(&s)?;
     }
@@ -955,19 +974,23 @@ pub fn generate_function_release_memory_circuit() -> Vec<String>{
 pub fn generate_main_cpp_file(c_folder: &PathBuf, producer: &CProducer) -> std::io::Result<()> {
     use std::io::BufWriter;
     let mut code = "".to_string();
-    if producer.prime_str != "goldilocks" { // if field number is not goldilocks   
+    if producer.uses_large_field() {
         let file = include_str!("common/main.cpp");
         for line in file.lines() {
             code = format!("{}{}\n", code, line);
         }
     } else {
-        let main_template: &str = include_str!("common64/main.cpp");
+        let main_template: &str = if producer.is_koalabear() {
+            include_str!("common32/main.cpp")
+        } else {
+            include_str!("common64/main.cpp")
+        };
         let template = handlebars::Handlebars::new();
         code = template
             .render_template(
                 main_template,
                 &json!({
-                    "prime": format!("{}ull",producer.get_prime())
+                    "prime": format!("{}{}", producer.get_prime(), producer.direct_field_literal_suffix())
                 }),
             )
             .expect("must render");
@@ -990,8 +1013,10 @@ pub fn generate_circom_hpp_file(c_folder: &PathBuf, producer: &CProducer) -> std
     let file_name = file_path.to_str().unwrap();
     let mut c_file = BufWriter::new(File::create(file_name).unwrap());
     let mut code = "".to_string();
-    let file = if producer.prime_str != "goldilocks" {
+    let file = if producer.uses_large_field() {
         include_str!("common/circom.hpp")
+    } else if producer.is_koalabear() {
+        include_str!("common32/circom.hpp")
     } else { include_str!("common64/circom.hpp")};
     for line in file.lines() {
         code = format!("{}{}\n", code, line);
@@ -1009,7 +1034,7 @@ pub fn generate_fr_hpp_file(c_folder: &PathBuf, prime: &String, producer: &CProd
     let file_name = file_path.to_str().unwrap();
     let mut c_file = BufWriter::new(File::create(file_name).unwrap());
     let mut code = "".to_string();
-    if producer.prime_str != "goldilocks" && producer.no_asm {
+    if producer.uses_large_field() && producer.no_asm {
         let p = producer.get_prime().parse::<BigInt>().unwrap();
         let n64 = (p.bits() + 63) / 64;
         let fr_hpp_template: &str = include_str!("generic/fr.hpp");
@@ -1030,6 +1055,7 @@ pub fn generate_fr_hpp_file(c_folder: &PathBuf, prime: &String, producer: &CProd
             "bls12381" => include_str!("bls12381/fr.hpp"),
             //"goldilocks" => include_str!("goldilocks/fr.hpp"),
             "goldilocks" => include_str!("goldilocks/fr.hpp"),
+            "koalabear" => include_str!("koalabear/fr.hpp"),
             "grumpkin" => include_str!("grumpkin/fr.hpp"),
             "pallas" => include_str!("pallas/fr.hpp"),
             "vesta" => include_str!("vesta/fr.hpp"),
@@ -1054,7 +1080,8 @@ pub fn generate_calcwit_hpp_file(c_folder: &PathBuf, producer: &CProducer) -> st
     let file_name = file_path.to_str().unwrap();
     let mut c_file = BufWriter::new(File::create(file_name).unwrap());
     let mut code = "".to_string();
-    let file = if producer.prime_str != "goldilocks" { include_str!("common/calcwit.hpp")
+    let file = if producer.uses_large_field() { include_str!("common/calcwit.hpp")
+    } else if producer.is_koalabear() { include_str!("common32/calcwit.hpp")
     } else { include_str!("common64/calcwit.hpp")};
     for line in file.lines() {
         code = format!("{}{}\n", code, line);
@@ -1091,7 +1118,14 @@ pub fn generate_fr_cpp_file(c_folder: &PathBuf, prime: &String,  producer: &CPro
         let file_name = file_path.to_str().unwrap();
         let mut c_file = BufWriter::new(File::create(file_name).unwrap());
         let mut code = "".to_string();
-        if producer.no_asm {
+        if producer.is_koalabear() {
+            let file = include_str!("koalabear/fr.cpp");
+            for line in file.lines() {
+                code = format!("{}{}\n", code, line);
+            }
+            c_file.write_all(code.as_bytes())?;
+            c_file.flush()?;
+        } else if producer.no_asm {
             use circom_algebra::num_traits::ToPrimitive;
             //use circom_algebra::modular_arithmetic;
             use circom_algebra::num_bigint::{ModInverse};
@@ -1169,7 +1203,8 @@ pub fn generate_calcwit_cpp_file(c_folder: &PathBuf, producer: &CProducer) -> st
     let file_name = file_path.to_str().unwrap();
     let mut c_file = BufWriter::new(File::create(file_name).unwrap());
     let mut code = "".to_string();
-    let file = if producer.prime_str != "goldilocks" { include_str!("common/calcwit.cpp")
+    let file = if producer.uses_large_field() { include_str!("common/calcwit.cpp")
+    } else if producer.is_koalabear() { include_str!("common32/calcwit.cpp")
     } else { include_str!("common64/calcwit.cpp")};
     for line in file.lines() {
         code = format!("{}{}\n", code, line);
@@ -1180,7 +1215,7 @@ pub fn generate_calcwit_cpp_file(c_folder: &PathBuf, producer: &CProducer) -> st
 }
 
 pub fn generate_fr_asm_file(c_folder: &PathBuf, prime: &String, producer: &CProducer) -> std::io::Result<()> {
-    if prime != "goldilocks" && !producer.no_asm {
+    if producer.uses_large_field() && !producer.no_asm {
         use std::io::BufWriter;
         let mut file_path = c_folder.clone();
         file_path.push("fr");
@@ -1215,9 +1250,10 @@ pub fn generate_make_file(
     producer: &CProducer,
 ) -> std::io::Result<()> {
     use std::io::BufWriter;
-    let makefile_template: &str = if producer.prime_str != "goldilocks" && !producer.no_asm { include_str!("common/makefile")
+    let makefile_template: &str = if producer.uses_large_field() && !producer.no_asm { include_str!("common/makefile")
     } else {
-        if producer.prime_str == "goldilocks" {include_str!("common64/makefile")
+        if producer.is_goldilocks() {include_str!("common64/makefile")
+        } else if producer.is_koalabear() {include_str!("common32/makefile")
         } else {include_str!("generic/makefile")}
     };
     let template = handlebars::Handlebars::new();

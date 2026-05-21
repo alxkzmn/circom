@@ -69,6 +69,12 @@ impl Input {
         let o_style = input_processing::get_simplification_style(&matches)?;
         let sanity_check_style = input_processing::get_sanity_check_style(&matches)?;
         let link_libraries = input_processing::get_link_libraries(&matches);
+        let wat_flag = input_processing::get_wat(&matches);
+        let wasm_flag = input_processing::get_wasm(&matches);
+        let prime = input_processing::get_prime(&matches)?;
+        if prime == "koalabear" && (wasm_flag || wat_flag) {
+            return Result::Err(eprintln!("{}", Colour::Red.paint("--wasm/--wat is not supported for --prime koalabear; use --c for the native witness generator")));
+        }
         Result::Ok(Input {
             //field: P_BN128,
             input_program: input,
@@ -92,8 +98,8 @@ impl Input {
                 &format!("{}_substitutions", file_name),
                 JSON,
             ),
-            wat_flag:input_processing::get_wat(&matches),
-            wasm_flag: input_processing::get_wasm(&matches),
+            wat_flag:wat_flag,
+            wasm_flag: wasm_flag,
             c_flag: c_flag,
             no_asm_flag:input_processing::get_no_asm(&matches),
             sanity_check_style: sanity_check_style as usize,
@@ -111,7 +117,7 @@ impl Input {
             flag_old_heuristics: input_processing::get_flag_old_heuristics(&matches),
             flag_verbose: input_processing::get_flag_verbose(&matches), 
             flag_no_init: input_processing::get_flag_no_init(&matches), 
-            prime: input_processing::get_prime(&matches)?,
+            prime: prime,
             link_libraries
         })
     }
@@ -377,6 +383,7 @@ mod input_processing {
                    if prime_value == "bn128"
                       || prime_value == "bls12381"
                       || prime_value == "goldilocks"
+                      || prime_value == "koalabear"
                       || prime_value == "grumpkin"
                       || prime_value == "pallas"
                       || prime_value == "vesta"
@@ -579,7 +586,7 @@ mod input_processing {
                     .takes_value(true)
                     .default_value("bn128")
                     .display_order(300)
-                    .help("To choose the prime number to use to generate the circuit. Receives the name of the curve (bn128, bls12377, bls12381, goldilocks, grumpkin, pallas, secq256r1, vesta)"),
+                    .help("To choose the prime number to use to generate the circuit. Receives the name of the curve or field (bn128, bls12377, bls12381, goldilocks, koalabear, grumpkin, pallas, secq256r1, vesta)"),
             )
             .get_matches()
     }

@@ -6,6 +6,7 @@ const P_BLS12381: &str =
     "52435875175126190479447740508185965837690552500527637822603658699938581184513";
 const P_GOLDILOCKS: &str = 
     "18446744069414584321";
+const P_KOALABEAR: &str = "2130706433";
 const P_GRUMPKIN: &str = "21888242871839275222246405745257275088696311157297823662689037894645226208583";
 const P_PALLAS: &str = "28948022309329048855892746252171976963363056481941560715954676764349967630337";
 const P_VESTA : &str = "28948022309329048855892746252171976963363056481941647379679742748393362948097";
@@ -29,6 +30,7 @@ impl UsefulConstants {
         let prime_to_use = if possible_prime.eq("bn128") {P_BN128} 
           else if possible_prime.eq("bls12381") { P_BLS12381} 
           else if possible_prime.eq("goldilocks") { P_GOLDILOCKS} 
+          else if possible_prime.eq("koalabear") { P_KOALABEAR}
           else if possible_prime.eq("grumpkin") { P_GRUMPKIN} 
           else if possible_prime.eq("pallas") { P_PALLAS} 
           else if possible_prime.eq("vesta") { P_VESTA} 

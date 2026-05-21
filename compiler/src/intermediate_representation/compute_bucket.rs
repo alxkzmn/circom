@@ -350,7 +350,7 @@ impl WriteC for ComputeBucket {
             operands.push(operand);
             compute_c.append(&mut instr_c);
         }
-        if producer.prime_str != "goldilocks" {
+        if producer.uses_large_field() {
             match &self.op {
                 OperatorType::AddAddress => {
                     result = format!("({} + {})", operands[0], operands[1]);

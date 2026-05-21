@@ -3,11 +3,7 @@ use constraint_writers::r1cs_writer::{ConstraintSection, CustomGatesAppliedData,
 
 pub fn port_r1cs(list: &ConstraintList, output: &str, custom_gates: bool) -> Result<(), ()> {
     use constraint_writers::log_writer::Log;
-    let field_size = if list.field.bits() % 64 == 0 {
-        list.field.bits() / 8
-    } else{
-        (list.field.bits() / 64 + 1) * 8
-    };
+    let field_size = field_size_bytes(&list.field);
     let mut log = Log::new();
     log.no_labels = ConstraintList::no_labels(list);
     log.no_wires = ConstraintList::no_wires(list);
@@ -121,4 +117,29 @@ pub fn port_r1cs(list: &ConstraintList, output: &str, custom_gates: bool) -> Res
     }
     Log::print(&log);
     Ok(())
+}
+
+fn field_size_bytes(field: &circom_algebra::num_bigint::BigInt) -> usize {
+    (field.bits() + 7) / 8
+}
+
+#[cfg(test)]
+mod tests {
+    use super::field_size_bytes;
+    use circom_algebra::num_bigint::BigInt;
+
+    #[test]
+    fn field_size_is_minimal_byte_width() {
+        let koalabear = BigInt::parse_bytes(b"2130706433", 10).unwrap();
+        let goldilocks = BigInt::parse_bytes(b"18446744069414584321", 10).unwrap();
+        let bn128 = BigInt::parse_bytes(
+            b"21888242871839275222246405745257275088548364400416034343698204186575808495617",
+            10,
+        )
+        .unwrap();
+
+        assert_eq!(field_size_bytes(&koalabear), 4);
+        assert_eq!(field_size_bytes(&goldilocks), 8);
+        assert_eq!(field_size_bytes(&bn128), 32);
+    }
 }

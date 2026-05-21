@@ -79,10 +79,10 @@ impl WriteC for ValueBucket {
         match self.parse_as {
             ValueType::U32 => (vec![], index),
             ValueType::BigInt => {
-                let access = if producer.prime_str != "goldilocks" {
+                let access = if producer.uses_large_field() {
                     format!("&{}", circuit_constants(index))
                 } else {
-                    format!("{}ull", producer.get_field_constant_list()[self.value])
+                    format!("{}{}", producer.get_field_constant_list()[self.value], producer.direct_field_literal_suffix())
                 };
                 (vec![], access)
             }

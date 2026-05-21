@@ -618,14 +618,14 @@ impl WriteC for StoreBucket {
         // Build dest
         let dest = match &self.dest_address_type {
             AddressType::Variable => {
-                if producer.prime_str != "goldilocks" {
+                if producer.uses_large_field() {
                     format!("&{}", lvar(dest_index.clone()))
                 } else {
                     format!("{}", lvar(dest_index.clone()))
                 }
             }
             AddressType::Signal => {
-                if producer.prime_str != "goldilocks" {
+                if producer.uses_large_field() {
                     format!("&{}", signal_values(dest_index.clone()))
                 } else {
                     format!("{}", signal_values(dest_index.clone()))
@@ -636,7 +636,7 @@ impl WriteC for StoreBucket {
                     "{}->componentMemory[{}[{}]].signalStart",
                     CIRCOM_CALC_WIT, MY_SUBCOMPONENTS, cmp_index_ref
                 );
-                if producer.prime_str != "goldilocks" {
+                if producer.uses_large_field() {
                     format!("&{}->signalValues[{} + {}]", CIRCOM_CALC_WIT, sub_cmp_start, dest_index.clone())
                 } else {
                     format!("{}->signalValues[{} + {}]", CIRCOM_CALC_WIT, sub_cmp_start, dest_index.clone())
@@ -652,7 +652,7 @@ impl WriteC for StoreBucket {
 	}
         // store src in dest
         let mut aux_dest = "".to_string();
-        if producer.prime_str != "goldilocks" {
+        if producer.uses_large_field() {
 	prologue.push(format!("{{")); // open block 2
 	    aux_dest = "aux_dest".to_string();
 	    prologue.push(format!("{} {} = {};", T_P_FR_ELEMENT, aux_dest, dest));
@@ -664,7 +664,7 @@ impl WriteC for StoreBucket {
 	prologue.push(format!("// end load src"));	
         std::mem::drop(src_prologue);
         if size != "1" && size != "0" {
-            let copy_arguments = if producer.prime_str != "goldilocks" {
+            let copy_arguments = if producer.uses_large_field() {
                  vec![aux_dest, src, size.clone()]
             } else {
                 vec![format!("&{}",dest), format!("&{}",src), size.clone()]
@@ -684,7 +684,7 @@ impl WriteC for StoreBucket {
 		        }
 	        }
         } else if size == "1"{
-            if producer.prime_str != "goldilocks" {
+            if producer.uses_large_field() {
                 let copy_arguments = vec![aux_dest, src];
                 prologue.push(format!("{};", build_call("Fr_copy".to_string(), copy_arguments)));
             } else {
@@ -701,7 +701,7 @@ impl WriteC for StoreBucket {
 	        }
         }
         
-        if producer.prime_str != "goldilocks" {
+        if producer.uses_large_field() {
 	        prologue.push(format!("}}")); // add a close block 2 if opened // not that since all closing } are at the end it works
         }
         match &self.dest_address_type {
