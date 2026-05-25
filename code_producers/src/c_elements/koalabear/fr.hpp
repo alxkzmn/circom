@@ -23,7 +23,7 @@ inline FrElement Fr_one() {
 inline FrElement Fr_reduce64(uint64_t x) {
   const uint64_t q = (((__uint128_t)x * 8657571868ull) >> 64);
   uint64_t r = x - q * (uint64_t)Fr_prime;
-  while (r >= (uint64_t)Fr_prime) r -= (uint64_t)Fr_prime;
+  if (r >= (uint64_t)Fr_prime) r -= (uint64_t)Fr_prime;
   return (FrElement)r;
 }
 
