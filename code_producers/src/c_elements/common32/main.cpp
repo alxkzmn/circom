@@ -1,42 +1,48 @@
 #include <iostream>
-#include <fstream>
 #include <sstream>
+#include <cstring>
+#include <exception>
+#include <algorithm>
+#include <system_error>
+#include <stdexcept>
+#include <cstdlib>
+#include <utility>
+#include <vector>
+
+#ifndef CIRCOM_LINKED_WITNESS_ONLY
+#include <fstream>
 #include <iomanip>
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <nlohmann/json.hpp>
-#include <vector>
 #include <chrono>
-
 using json = nlohmann::json;
+#endif
+
+#if defined(_WIN32)
+#define CIRCOM_LINKED_EXPORT __declspec(dllexport)
+#else
+#define CIRCOM_LINKED_EXPORT __attribute__((visibility("default")))
+#endif
 
 #include "calcwit.hpp"
 #include "circom.hpp"
 
 
+static void copyError(u8 *error_msg, size_t error_msg_len, const std::string &message) {
+    if (error_msg == nullptr || error_msg_len == 0) return;
+    size_t copy_len = std::min(message.size(), error_msg_len - 1);
+    memcpy(error_msg, message.data(), copy_len);
+    error_msg[copy_len] = 0;
+}
+
 #define handle_error(msg) \
            do { perror(msg); exit(EXIT_FAILURE); } while (0)
 
-Circom_Circuit* loadCircuit(std::string const &datFileName) {
+static Circom_Circuit* loadCircuitFromBytes(const u8 *bdata, size_t data_size) {
     Circom_Circuit *circuit = new Circom_Circuit;
-
-    int fd;
-    struct stat sb;
-
-    fd = open(datFileName.c_str(), O_RDONLY);
-    if (fd == -1) {
-        std::cout << ".dat file not found: " << datFileName << "\n";
-        throw std::system_error(errno, std::generic_category(), "open");
-    }
-    
-    if (fstat(fd, &sb) == -1) {          /* To obtain file size */
-        throw std::system_error(errno, std::generic_category(), "fstat");
-    }
-
-    u8* bdata = (u8*)mmap(NULL, sb.st_size, PROT_READ , MAP_PRIVATE, fd, 0);
-    close(fd);
 
     circuit->InputHashMap = new HashSignalInfo[get_size_of_input_hashmap()];
     uint dsize = get_size_of_input_hashmap()*sizeof(HashSignalInfo);
@@ -46,25 +52,28 @@ Circom_Circuit* loadCircuit(std::string const &datFileName) {
     uint inisize = dsize;    
     dsize = get_size_of_witness()*sizeof(u64);
     memcpy((void *)(circuit->witness2SignalList), (void *)(bdata+inisize), dsize);
-    
+
     std::map<u32,IOFieldDefPair> templateInsId2IOSignalInfo1;
-    IOFieldDefPair* busInsId2FieldInfo1;
+    IOFieldDefPair* busInsId2FieldInfo1 = nullptr;
     if (get_size_of_io_map()>0) {
-      u32 index[get_size_of_io_map()];
+      std::vector<u32> index(get_size_of_io_map());
       inisize += dsize;
       dsize = get_size_of_io_map()*sizeof(u32);
-      memcpy((void *)index, (void *)(bdata+inisize), dsize);
+      memcpy((void *)index.data(), (void *)(bdata+inisize), dsize);
       inisize += dsize;
       assert(inisize % sizeof(u32) == 0);    
-      assert(sb.st_size % sizeof(u32) == 0);
-      u32 dataiomap[(sb.st_size-inisize)/sizeof(u32)];
-      memcpy((void *)dataiomap, (void *)(bdata+inisize), sb.st_size-inisize);
-      u32* pu32 = dataiomap;
+      assert(data_size % sizeof(u32) == 0);
+      if (inisize > data_size) {
+        throw std::runtime_error("invalid circuit data layout");
+      }
+      std::vector<u32> dataiomap((data_size-inisize)/sizeof(u32));
+      memcpy((void *)dataiomap.data(), (void *)(bdata+inisize), data_size-inisize);
+      u32* pu32 = dataiomap.data();
       for (int i = 0; i < get_size_of_io_map(); i++) {
 	u32 n = *pu32;
 	IOFieldDefPair p;
 	p.len = n;
-	IOFieldDef defs[n];
+	std::vector<IOFieldDef> defs(n);
 	pu32 += 1;
 	for (u32 j = 0; j <n; j++){
 	  defs[j].offset=*pu32;
@@ -88,7 +97,7 @@ Circom_Circuit* loadCircuit(std::string const &datFileName) {
 	u32 n = *pu32;
 	IOFieldDefPair p;
 	p.len = n;
-	IOFieldDef defs[n];
+	std::vector<IOFieldDef> defs(n);
 	pu32 += 1;
 	for (u32 j = 0; j <n; j++){
 	  defs[j].offset=*pu32;
@@ -101,16 +110,62 @@ Circom_Circuit* loadCircuit(std::string const &datFileName) {
 	  defs[j].busId=*(pu32+1);	  
 	  pu32 += 2;
 	}
-	p.defs = (IOFieldDef*)calloc(10, sizeof(IOFieldDef));
+	p.defs = (IOFieldDef*)calloc(p.len, sizeof(IOFieldDef));
 	for (u32 j = 0; j < p.len; j++){
 	  p.defs[j] = defs[j];
 	}
 	busInsId2FieldInfo1[i] = p;
       }
     }
-    circuit->templateInsId2IOSignalInfo = move(templateInsId2IOSignalInfo1);
+    circuit->templateInsId2IOSignalInfo = std::move(templateInsId2IOSignalInfo1);
     circuit->busInsId2FieldInfo = busInsId2FieldInfo1;
 
+    return circuit;
+}
+
+static void freeIOFieldDefPair(IOFieldDefPair &pair) {
+    for (u32 i = 0; i < pair.len; i++) {
+        delete[] pair.defs[i].lengths;
+    }
+    free(pair.defs);
+    pair.defs = nullptr;
+    pair.len = 0;
+}
+
+static void freeCircuit(Circom_Circuit *circuit) {
+    if (circuit == nullptr) return;
+    delete[] circuit->InputHashMap;
+    delete[] circuit->witness2SignalList;
+    for (auto &entry : circuit->templateInsId2IOSignalInfo) {
+        freeIOFieldDefPair(entry.second);
+    }
+    if (circuit->busInsId2FieldInfo != nullptr) {
+        for (uint i = 0; i < get_size_of_bus_field_map(); i++) {
+            freeIOFieldDefPair(circuit->busInsId2FieldInfo[i]);
+        }
+        free(circuit->busInsId2FieldInfo);
+    }
+    delete circuit;
+}
+
+#ifndef CIRCOM_LINKED_WITNESS_ONLY
+Circom_Circuit* loadCircuit(std::string const &datFileName) {
+    int fd;
+    struct stat sb;
+
+    fd = open(datFileName.c_str(), O_RDONLY);
+    if (fd == -1) {
+        std::cout << ".dat file not found: " << datFileName << "\n";
+        throw std::system_error(errno, std::generic_category(), "open");
+    }
+
+    if (fstat(fd, &sb) == -1) {          /* To obtain file size */
+        throw std::system_error(errno, std::generic_category(), "fstat");
+    }
+
+    u8* bdata = (u8*)mmap(NULL, sb.st_size, PROT_READ , MAP_PRIVATE, fd, 0);
+    close(fd);
+    Circom_Circuit *circuit = loadCircuitFromBytes(bdata, sb.st_size);
     munmap(bdata, sb.st_size);
     
     return circuit;
@@ -262,7 +317,20 @@ void loadBinary(Circom_CalcWit *ctx, std::string filename) {
     uint dsize = get_main_input_signal_no()*sizeof(FrElement);
     memcpy((void *)(ctx->signalValues+get_main_input_signal_start()), (void *)bdata, dsize);
 }
+#endif
 
+void loadBinaryBuffer(Circom_CalcWit *ctx, const u8 *buffer, size_t buffer_size) {
+    size_t expected_size = (size_t)get_main_input_signal_no() * sizeof(FrElement);
+    if (buffer_size != expected_size) {
+        std::ostringstream errStrStream;
+        errStrStream << "Invalid binary input length: expected " << expected_size
+                     << " bytes, got " << buffer_size << "\n";
+        throw std::runtime_error(errStrStream.str());
+    }
+    memcpy((void *)(ctx->signalValues+get_main_input_signal_start()), (const void *)buffer, expected_size);
+}
+
+#ifndef CIRCOM_LINKED_WITNESS_ONLY
 void loadJson(Circom_CalcWit *ctx, std::string filename) {
   std::ifstream inStream(filename);
   json jin;
@@ -356,7 +424,77 @@ void writeBinWitness(Circom_CalcWit *ctx, std::string wtnsFileName) {
 
     fclose(write_ptr);
 }
+#endif
 
+extern "C" CIRCOM_LINKED_EXPORT void* {{run_name}}_load_circuit(
+    const u8 *circuit_buffer,
+    size_t circuit_size,
+    u8 *error_msg,
+    size_t error_msg_len
+) {
+    try {
+        return (void*)loadCircuitFromBytes(circuit_buffer, circuit_size);
+    } catch (const std::exception &e) {
+        copyError(error_msg, error_msg_len, e.what());
+        return nullptr;
+    } catch (...) {
+        copyError(error_msg, error_msg_len, "unknown circuit load error");
+        return nullptr;
+    }
+}
+
+extern "C" CIRCOM_LINKED_EXPORT void {{run_name}}_free_circuit(void *circuit_handle) {
+    freeCircuit((Circom_Circuit*)circuit_handle);
+}
+
+extern "C" CIRCOM_LINKED_EXPORT int {{run_name}}_linked_witness(
+    void *circuit_handle,
+    const u8 *input_buffer,
+    size_t input_size,
+    u32 *witness,
+    size_t witness_len,
+    u32 *public_inputs,
+    size_t public_inputs_len,
+    u8 *error_msg,
+    size_t error_msg_len
+) {
+    try {
+        Circom_Circuit *circuit = (Circom_Circuit*)circuit_handle;
+        if (circuit == nullptr) {
+            throw std::runtime_error("null circuit handle");
+        }
+        size_t total_witness = (size_t)get_size_of_witness();
+        if (public_inputs_len + witness_len + 1 != total_witness) {
+            std::ostringstream errStrStream;
+            errStrStream << "Invalid output layout: expected "
+                         << (total_witness - 1) << " non-constant values, got "
+                         << (public_inputs_len + witness_len) << "\n";
+            throw std::runtime_error(errStrStream.str());
+        }
+        Circom_CalcWit ctx(circuit);
+        loadBinaryBuffer(&ctx, input_buffer, input_size);
+        ctx.runCircuit();
+
+        FrElement value;
+        for (size_t i = 0; i < public_inputs_len; i++) {
+            ctx.getWitness((uint)(1 + i), value);
+            public_inputs[i] = value;
+        }
+        for (size_t i = 0; i < witness_len; i++) {
+            ctx.getWitness((uint)(1 + public_inputs_len + i), value);
+            witness[i] = value;
+        }
+        return 0;
+    } catch (const std::exception &e) {
+        copyError(error_msg, error_msg_len, e.what());
+        return 1;
+    } catch (...) {
+        copyError(error_msg, error_msg_len, "unknown witness generator error");
+        return 1;
+    }
+}
+
+#ifndef CIRCOM_LINKED_WITNESS_ONLY
 int main (int argc, char *argv[]) {
   std::string cl(argv[0]);
   if (argc!=3) {
@@ -400,3 +538,4 @@ int main (int argc, char *argv[]) {
 
   }  
 }
+#endif

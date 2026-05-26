@@ -971,7 +971,7 @@ pub fn generate_function_release_memory_circuit() -> Vec<String>{
     instructions
   }
 
-pub fn generate_main_cpp_file(c_folder: &PathBuf, producer: &CProducer) -> std::io::Result<()> {
+pub fn generate_main_cpp_file(c_folder: &PathBuf, run_name: &str, producer: &CProducer) -> std::io::Result<()> {
     use std::io::BufWriter;
     let mut code = "".to_string();
     if producer.uses_large_field() {
@@ -990,7 +990,8 @@ pub fn generate_main_cpp_file(c_folder: &PathBuf, producer: &CProducer) -> std::
             .render_template(
                 main_template,
                 &json!({
-                    "prime": format!("{}{}", producer.get_prime(), producer.direct_field_literal_suffix())
+                    "prime": format!("{}{}", producer.get_prime(), producer.direct_field_literal_suffix()),
+                    "run_name": run_name
                 }),
             )
             .expect("must render");

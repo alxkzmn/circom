@@ -74,12 +74,16 @@ impl WriteC for AssertBucket {
             let (mut prologue, value) = self.evaluate.produce_c(producer, parallel);
             let is_true = build_call("Fr_isTrue".to_string(), vec![value]);
             let if_condition = format!("if (!{}) {};", is_true, build_failed_assert_message(self.line));    
-            let assertion = format!("{};", build_call("assert".to_string(), vec![is_true]));
+            let assertion = format!("{};", build_call("assert".to_string(), vec![is_true.clone()]));
             let mut assert_c = vec![];
             assert_c.push(format!("{{"));
             assert_c.append(&mut prologue);
             assert_c.push(if_condition);
+            assert_c.push("#ifdef CIRCOM_LINKED_WITNESS_ONLY".to_string());
+            assert_c.push(format!("if (!{}) throw std::runtime_error(\"Circom assertion failed at line {}\");", is_true, self.line));
+            assert_c.push("#else".to_string());
             assert_c.push(assertion);
+            assert_c.push("#endif".to_string());
             assert_c.push(format!("}}"));
             (assert_c, "".to_string())
         } else{
